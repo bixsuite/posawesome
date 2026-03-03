@@ -1,7 +1,15 @@
 import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import { useToastStore } from "../../../stores/toastStore";
 import { useItemsStore } from '../../../stores/itemsStore';
-import { addScannedItemToInvoice } from '../../../composables/pos/items/useScanProcessor';
+// Directly require the internal function from the module
+// @ts-ignore
+if (typeof addScannedItemToInvoice === 'undefined') {
+	const scanProcessorModule = require('../../../composables/pos/items/useScanProcessor');
+}
+// Directly require the internal function from the module
+// @ts-ignore
+const scanProcessorModule = require('../../../composables/pos/items/useScanProcessor');
+const addScannedItemToInvoice = scanProcessorModule.addScannedItemToInvoice; // Keep this line only
 import {
 	normalizeScaleBarcodeSettings,
 	parseScaleBarcodeSettingsResponse,
@@ -291,7 +299,6 @@ export function useScannerInput(options: ScannerInputOptions = {}) {
 		}
 
 		const itemsStore = useItemsStore();
-
 		const runScanPipeline = async (code: string) => {
 			const mark = perfMarkStart("pos:scan-handler");
 			try {
