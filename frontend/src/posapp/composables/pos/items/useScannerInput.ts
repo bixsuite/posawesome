@@ -1,5 +1,7 @@
 import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import { useToastStore } from "../../../stores/toastStore";
+import { useItemsStore } from '../../../stores/itemsStore';
+import { addScannedItemToInvoice } from '../../../composables/pos/items/useScanProcessor';
 import {
 	normalizeScaleBarcodeSettings,
 	parseScaleBarcodeSettingsResponse,
@@ -288,6 +290,8 @@ export function useScannerInput(options: ScannerInputOptions = {}) {
 			return;
 		}
 
+		const itemsStore = useItemsStore();
+
 		const runScanPipeline = async (code: string) => {
 			const mark = perfMarkStart("pos:scan-handler");
 			try {
@@ -295,7 +299,24 @@ export function useScannerInput(options: ScannerInputOptions = {}) {
 				pendingScanCode.value = code;
 				searchFromScanner.value = true;
 
-				// Show feedback
+				// First, check for direct item_code match
+				const itemByCode = itemsStore.items.find((i: any) => i.item_code === code);
+				if (itemByCode) {
+					await addScannedItemToInvoice(itemByCode, code);
+					if (toastStore) {
+						toastStore.show({
+							title: __("Item added by item_code: {0}", [code]),
+							summary: __("Item added to cart"),
+							detail: code,
+							color: "success",
+							timeout: 2000,
+							key: "scanner-success",
+						});
+					}
+					return;
+				}
+
+				// Fallback: Show feedback and continue with normal scan handler
 				if (toastStore) {
 					toastStore.show({
 						title: __("Scanning for: {0}", [code]),

@@ -53,7 +53,7 @@
 						</v-list-item>
 
 						<!-- Cache and System Status on mobile -->
-						<v-list-item
+						<v-list-item v-if=0
 							class="menu-item-compact system-info-mobile"
 							@click="$emit('refresh-cache-usage')"
 						>
@@ -72,7 +72,7 @@
 							</div>
 						</v-list-item>
 
-						<v-divider class="menu-section-divider-compact"></v-divider>
+						<v-divider v-if=0 class="menu-section-divider-compact"></v-divider>
 					</v-list>
 				</template>
 
@@ -213,7 +213,7 @@
 						</div>
 					</v-list-item>
 
-					<v-list-item
+					<v-list-item v-if=0
 						@click="checkForUpdates"
 						:disabled="manualOffline || !networkOnline || !serverOnline"
 						class="menu-item-compact info-action"
@@ -235,7 +235,7 @@
 
 					<v-divider class="menu-section-divider-compact"></v-divider>
 
-					<v-list-item @click="$emit('show-about')" class="menu-item-compact neutral-action">
+					<v-list-item v-if=0 @click="$emit('show-about')" class="menu-item-compact neutral-action">
 						<template v-slot:prepend>
 							<div class="menu-icon-wrapper-compact neutral-icon">
 								<v-icon color="white" size="16">mdi-information-outline</v-icon>
