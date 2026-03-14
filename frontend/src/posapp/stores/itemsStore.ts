@@ -203,14 +203,14 @@ export const useItemsStore = defineStore("items", () => {
 		if (limitSearchEnabled.value) {
 			return false;
 		}
-		return Boolean(posProfile.value?.posa_local_storage);
+		return true;
 	};
 
 	const shouldPersistItems = () => {
 		if (limitSearchEnabled.value) {
 			return false;
 		}
-		return Boolean(posProfile.value?.posa_local_storage);
+		return true;
 	};
 
 	const getCacheScope = () => {
@@ -250,7 +250,8 @@ export const useItemsStore = defineStore("items", () => {
 
 			if (additions.length) {
 				items.value = [...items.value, ...additions];
-				updateIndexes(additions, posProfile.value);
+				const appendedItems = items.value.slice(-additions.length);
+				updateIndexes(appendedItems, posProfile.value);
 			}
 		}
 
@@ -497,6 +498,33 @@ export const useItemsStore = defineStore("items", () => {
 				const cachedResult = await getCachedItems(cacheKey);
 				if (cachedResult) {
 					setItems(cachedResult);
+					itemsLoaded.value = true;
+					cachedPagination.value.enabled = false;
+					cachedPagination.value.offset = cachedResult.length;
+					cachedPagination.value.total = cachedResult.length;
+					cachedPagination.value.loading = false;
+					if (!searchValue && shouldPersistItems()) {
+						const storedCount = await getStoredItemsCountByScopeCompat(
+							getStorageScope(),
+						).catch(() => 0);
+						if (!storedCount && cachedResult.length) {
+							await persistItemsToStorage(
+								cachedResult,
+								true,
+								true,
+								getStorageScope(),
+								async () => {
+									await updateCachedPaginationFromStorage(
+										cachedResult.length,
+										totalItemCount,
+										posProfile.value,
+										shouldUseIndexedSearch(),
+										limitSearchEnabled.value,
+									);
+								},
+							);
+						}
+					}
 					performanceMetrics.value.cachedRequests++;
 					updatePerformanceMetrics(startTime);
 					return cachedResult;
@@ -924,6 +952,7 @@ export const useItemsStore = defineStore("items", () => {
 				item.currency = nextCurrency;
 			}
 		});
+		clearSearchCache();
 
 		if (searchTerm.value) {
 			filteredItems.value = performLocalSearch(
@@ -1000,12 +1029,17 @@ export const useItemsStore = defineStore("items", () => {
 		}
 	};
 
-	const refreshModifiedItems = async () => {
+	const refreshModifiedItems = async (priceListOverride: string | null = null) => {
 		if (!itemsLoaded.value) return { size: 0, count: 0, items: [] };
+		const resolvedPriceList =
+			typeof priceListOverride === "string" &&
+			priceListOverride.trim().length > 0
+				? priceListOverride.trim()
+				: activePriceList.value;
 
 		return await syncRefreshModifiedItems(
 			posProfile.value,
-			activePriceList.value,
+			resolvedPriceList,
 			customer.value,
 			getStorageScope(),
 			(updates) => updateItemsInPlace(updates),
@@ -1014,25 +1048,75 @@ export const useItemsStore = defineStore("items", () => {
 	};
 
 	const updateItemsInPlace = (updates: Item[]) => {
-		let needsReindex = false;
+		if (!Array.isArray(updates) || updates.length === 0) {
+			return;
+		}
+
 		const additions: Item[] = [];
+		const touchedItems: Item[] = [];
+		const canonicalItemsByCode = new Map<string, Item>();
+		items.value.forEach((item) => {
+			if (item?.item_code) {
+				canonicalItemsByCode.set(item.item_code, item);
+			}
+		});
 
 		updates.forEach((update) => {
-			const existing = itemsMap.value.get(update.item_code);
+			if (!update?.item_code) {
+				return;
+			}
+
+			const existing = canonicalItemsByCode.get(update.item_code);
 			if (existing) {
 				Object.assign(existing, update);
+				const syncedRate = update.price_list_rate ?? update.rate;
+				if (syncedRate !== undefined && syncedRate !== null) {
+					existing.original_rate = syncedRate as any;
+				}
+				if (update.currency) {
+					existing.original_currency = update.currency as any;
+				}
+				touchedItems.push(existing);
 			} else {
+				const syncedRate = update.price_list_rate ?? update.rate;
+				if (
+					syncedRate !== undefined &&
+					syncedRate !== null &&
+					update.original_rate === undefined
+				) {
+					(update as any).original_rate = syncedRate;
+				}
+				if (
+					update.currency &&
+					update.original_currency === undefined
+				) {
+					(update as any).original_currency = update.currency;
+				}
 				additions.push(update);
 			}
 		});
 
 		if (additions.length > 0) {
-			items.value.push(...additions);
-			updateIndexes(additions, posProfile.value);
-			needsReindex = true;
+			items.value = [...items.value, ...additions];
+			const appendedItems = items.value.slice(-additions.length);
+			updateIndexes(appendedItems, posProfile.value);
 		}
 
-		if (needsReindex && !searchTerm.value) {
+		if (touchedItems.length > 0) {
+			// Force a shallow array refresh so virtualized tables/cards re-render
+			// even when rows are updated in-place.
+			items.value = [...items.value];
+			updateIndexes(touchedItems, posProfile.value);
+		}
+
+		clearSearchCache();
+		if (searchTerm.value) {
+			filteredItems.value = performLocalSearch(
+				searchTerm.value,
+				items.value,
+				itemGroup.value,
+			);
+		} else {
 			filteredItems.value = filterItemsByGroup(
 				items.value,
 				itemGroup.value,

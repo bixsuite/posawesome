@@ -116,12 +116,21 @@ export async function show_payment(context: any) {
 
 		await context.$nextTick();
 
-		if (typeof context.paymentVisible !== "undefined") {
-			context.paymentVisible = true;
-		}
-		if (context.uiStore?.setActiveView) {
+		const useDesktopPaymentDialog =
+			typeof window !== "undefined" && window.innerWidth >= 992;
+
+		if (useDesktopPaymentDialog && context.uiStore?.openPaymentDialog) {
+			context.uiStore.openPaymentDialog();
+		} else if (context.uiStore?.setActiveView) {
+			context.uiStore.closePaymentDialog?.();
 			context.uiStore.setActiveView("payment");
 		}
+
+		if (typeof context.$nextTick === "function") {
+			await context.$nextTick();
+		}
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
 		context.eventBus.emit("show_payment", "true");
 		context.eventBus.emit("send_invoice_doc_payment", invoice_doc);
 	} catch (error: any) {
@@ -188,22 +197,168 @@ export function open_returns(context: any) {
 	context.eventBus.emit("open_returns", context.pos_profile.company);
 }
 
+export function open_invoice_management(context: any) {
+	context.uiStore?.openInvoiceManagement?.();
+}
+
 export function close_payments(context: any) {
 	if (context._suppressClosePayments) {
 		return;
 	}
 
-	if (typeof context.paymentVisible !== "undefined" && !context.paymentVisible) {
+	if (
+		typeof context.paymentVisible !== "undefined" &&
+		!context.paymentVisible &&
+		!context.uiStore?.paymentDialogOpen
+	) {
 		return;
 	}
 
-	if (typeof context.paymentVisible !== "undefined") {
-		context.paymentVisible = false;
+	if (context.uiStore?.paymentDialogOpen && context.uiStore?.closePaymentDialog) {
+		context.uiStore.closePaymentDialog();
+	} else if (context.uiStore?.setActiveView) {
+		context.uiStore.setActiveView("items");
 	}
 
 	context.eventBus.emit("show_payment", "false");
 }
 
-export function change_price_list_rate(context: any, item: any) {
-	context.eventBus.emit("change_price_list_rate", item);
+export async function change_price_list_rate(
+	context: any,
+	item: any,
+) {
+	if (!item) return;
+
+	const parseRate = (value: unknown) => {
+		if (value === null || value === undefined) return null;
+		const normalized = String(value).replace(/,/g, "").trim();
+		if (!normalized) return null;
+		const parsed = Number(normalized);
+		if (!Number.isFinite(parsed)) return null;
+		const rounded = context.flt
+			? context.flt(parsed, context.currency_precision)
+			: parsed;
+		return rounded >= 0 ? rounded : null;
+	};
+
+	const applyRate = (nextRate: number) => {
+		const priceCurrency =
+			context.selected_currency ||
+			context.price_list_currency ||
+			context.pos_profile?.currency;
+		if (context._applyPriceListRate) {
+			context._applyPriceListRate(item, nextRate, priceCurrency);
+		} else {
+			item.price_list_rate = nextRate;
+			item.base_price_list_rate = context._toBaseCurrency
+				? context._toBaseCurrency(nextRate)
+				: nextRate;
+		}
+
+		// Treat manual price-list change as an explicit rate override.
+		item.rate = nextRate;
+		item.base_rate = context._toBaseCurrency
+			? context._toBaseCurrency(nextRate)
+			: nextRate;
+		item.discount_amount = 0;
+		item.base_discount_amount = 0;
+		item.discount_percentage = 0;
+		item._manual_rate_set = true;
+		item._manual_rate_set_from_uom = false;
+		item.amount = context.flt
+			? context.flt((item.qty || 0) * item.rate, context.currency_precision)
+			: (item.qty || 0) * item.rate;
+		item.base_amount = context._toBaseCurrency
+			? context._toBaseCurrency(item.amount)
+			: item.amount;
+
+		if (typeof context.calc_stock_qty === "function") {
+			context.calc_stock_qty(item, item.qty);
+		}
+		if (typeof context.schedulePricingRuleApplication === "function") {
+			context.schedulePricingRuleApplication(true);
+		}
+		if (typeof context.forceUpdate === "function") {
+			context.forceUpdate();
+		}
+	};
+
+	const resolvePriceList = () => {
+		if (typeof context.get_price_list === "function") {
+			return context.get_price_list();
+		}
+		if (typeof context.get_effective_price_list === "function") {
+			return context.get_effective_price_list();
+		}
+		return (
+			context.selected_price_list ||
+			context.customer_info?.customer_price_list ||
+			context.customer_info?.customer_group_price_list ||
+			context.pos_profile?.selling_price_list ||
+			""
+		);
+	};
+
+	const persistRate = async (nextRate: number) => {
+		if (isOffline() || !frappe?.call) {
+			return;
+		}
+
+		const itemCode = item.item_code || item.name;
+		const priceList = resolvePriceList();
+		if (!itemCode || !priceList) {
+			return;
+		}
+
+		try {
+			await frappe.call({
+				method: "posawesome.posawesome.api.items.update_price_list_rate",
+				args: {
+					item_code: itemCode,
+					price_list: priceList,
+					rate: nextRate,
+					uom: item.uom || item.stock_uom || undefined,
+				},
+			});
+			item._price_list_rate_persisted = true;
+		} catch (error: any) {
+			console.error("Failed to persist price list rate:", error);
+			context.toastStore?.show?.({
+				title: __("Price list rate updated locally only"),
+				message:
+					error?.message ||
+					__("Unable to save the rate to the backend price list"),
+				color: "warning",
+			});
+		}
+	};
+
+	const currentRate = parseRate(item.price_list_rate ?? item.rate ?? 0) ?? 0;
+	let prompted: unknown = null;
+
+	if (typeof context.promptPriceListRate === "function") {
+		prompted = await context.promptPriceListRate(String(currentRate), item);
+	} else if (
+		typeof window !== "undefined" &&
+		typeof window.prompt === "function"
+	) {
+		// Backward-compatible fallback when the host component has no custom dialog.
+		prompted = window.prompt(__("Enter new price list rate"), String(currentRate));
+	}
+
+	if (prompted === null) {
+		return;
+	}
+	const nextRate = parseRate(prompted);
+
+	if (nextRate === null) {
+		context.toastStore?.show?.({
+			title: __("Invalid rate"),
+			color: "error",
+		});
+		return;
+	}
+
+	applyRate(nextRate);
+	await persistRate(nextRate);
 }

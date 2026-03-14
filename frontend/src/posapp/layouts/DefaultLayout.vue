@@ -1,5 +1,5 @@
 <template>
-	<v-app class="container1" :class="rtlClasses">
+	<v-app class="container1 posapp pos-theme-root" :class="rtlClasses">
 		<AppLoadingOverlay :visible="globalLoading" />
 		<UpdatePrompt />
 		<v-main class="main-content">
@@ -79,7 +79,7 @@ import {
 } from "../composables/core/useNetwork";
 import { useRtl } from "../composables/core/useRtl";
 import authService from "../services/authService.js";
-import { isCachedOpeningValidForCurrentUser } from "../utils/openingCache";
+import { getValidCachedOpeningForCurrentUser } from "../utils/openingCache";
 
 /**
  * Frappe Desk UI selectors to hide in POS view.
@@ -227,9 +227,6 @@ onMounted(() => {
 	if (BUILD_VERSION) {
 		updateStore.setCurrentVersion(BUILD_VERSION);
 	}
-	updateStore.setReloadAction(() => {
-		window.location.reload();
-	});
 	updateStore.checkForUpdates(true);
 	updateInterval = setInterval(
 		() => updateStore.checkForUpdates(),
@@ -322,14 +319,12 @@ const initializeData = async () => {
 	await initPromise;
 	await memoryInitPromise;
 	checkDbHealth().catch(() => {});
-	// Load POS profile from cache or storage
-	const openingData = getOpeningStorage();
-	if (
-		openingData &&
-		openingData.pos_profile &&
-		isOffline() &&
-		isCachedOpeningValidForCurrentUser(openingData, frappe?.session?.user)
-	) {
+	// Offline-first bootstrap: hydrate register state from IndexedDB before server checks.
+	const openingData = getValidCachedOpeningForCurrentUser(
+		getOpeningStorage(),
+		frappe?.session?.user,
+	);
+	if (openingData) {
 		uiStore.setRegisterData(openingData);
 		if (navigator.onLine) {
 			await refreshTaxInclusiveSetting();
@@ -635,24 +630,31 @@ const adjust_frappe_sidebar_offset = () => {
 
 <style scoped>
 .container1 {
-	/* Use dynamic viewport units for better mobile support */
+	width: 100%;
+	max-width: 100%;
+	min-height: 100dvh;
 	height: 100dvh;
-	max-height: 100dvh;
 	overflow: hidden;
 	padding-inline-start: var(--posa-desk-sidebar-width, 0px);
 	box-sizing: border-box;
 }
 
 .main-content {
-	/* Fill the available height of the container */
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	min-height: 0;
 	height: 100%;
 	display: flex;
 	flex-direction: column;
 }
 
 .page-content {
-	flex: 1;
-	overflow: hidden;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
 	padding-top: 8px;
 }
 
@@ -660,7 +662,34 @@ const adjust_frappe_sidebar_offset = () => {
 :deep(.v-main__wrap) {
 	display: flex;
 	flex-direction: column;
+	width: 100%;
 	min-height: 100%;
 	height: 100%;
+	min-width: 0;
+}
+
+@media (max-width: 768px) {
+	.container1 {
+		height: auto;
+		min-height: 100dvh;
+		overflow-y: auto;
+		overflow-x: hidden;
+	}
+
+	.main-content {
+		height: auto;
+		min-height: 100dvh;
+	}
+
+	.page-content {
+		overflow: visible;
+		min-height: 0;
+	}
+
+	:deep(.v-main__wrap) {
+		height: auto;
+		min-height: 100%;
+		overflow: visible;
+	}
 }
 </style>

@@ -1,4 +1,8 @@
 import type { App } from "vue";
+import {
+	isDynamicImportFailure,
+	recoverFromChunkLoadError,
+} from "./chunkLoadRecovery";
 
 type ErrorKind = "window_error" | "unhandled_rejection" | "vue_error";
 
@@ -183,6 +187,25 @@ export function installGlobalErrorHandlers(app: App) {
 
 	window.__posaGlobalErrorHandlersInstalled = true;
 
+	const previousWindowOnError = window.onerror;
+	window.onerror = (message, source, lineno, colno, error) => {
+		if (
+			isBenignGlobalError(
+				error,
+				typeof message === "string" ? message : String(message || ""),
+				typeof source === "string" ? source : "",
+			)
+		) {
+			return true;
+		}
+
+		if (typeof previousWindowOnError === "function") {
+			return previousWindowOnError(message, source, lineno, colno, error);
+		}
+
+		return false;
+	};
+
 	window.addEventListener("error", (event) => {
 		if (isBenignGlobalError(event.error, event.message, event.filename)) {
 			event.preventDefault();
@@ -196,10 +219,15 @@ export function installGlobalErrorHandlers(app: App) {
 			lineno: event.lineno,
 			colno: event.colno,
 		});
-	});
+	}, { capture: true });
 
 	window.addEventListener("unhandledrejection", (event) => {
 		const reason = event.reason;
+		if (isDynamicImportFailure(reason)) {
+			event.preventDefault();
+			void recoverFromChunkLoadError(reason, "unhandled-rejection");
+			return;
+		}
 		reportGlobalError("unhandled_rejection", {
 			message: getErrorMessage(reason),
 			stack: getErrorStack(reason),

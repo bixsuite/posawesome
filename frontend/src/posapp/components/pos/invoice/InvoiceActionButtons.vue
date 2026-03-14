@@ -1,6 +1,6 @@
 <template>
 	<v-row dense>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-btn
 				block
 				color="accent"
@@ -13,7 +13,7 @@
 				{{ __("Save & Clear") }}
 			</v-btn>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-btn
 				block
 				color="warning"
@@ -26,7 +26,7 @@
 				{{ __("Load Drafts") }}
 			</v-btn>
 		</v-col>
-		<v-col cols="6" v-if="pos_profile.custom_allow_select_sales_order == 1">
+		<v-col cols="12" sm="6" v-if="pos_profile.custom_allow_select_sales_order == 1">
 			<v-btn
 				block
 				color="info"
@@ -39,7 +39,20 @@
 				{{ __("Select S.O") }}
 			</v-btn>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
+			<v-btn
+				block
+				color="deep-purple"
+				theme="dark"
+				prepend-icon="mdi-folder-search-outline"
+				@click="$emit('open-invoice-management')"
+				class="summary-btn"
+				:loading="invoiceManagementLoading"
+			>
+				{{ __("Invoice Mgmt") }}
+			</v-btn>
+		</v-col>
+		<v-col cols="12" sm="6">
 			<v-btn
 				block
 				color="error"
@@ -53,7 +66,7 @@
 			</v-btn>
 		</v-col>
 
-		<v-col cols="6" v-if="pos_profile.posa_allow_return == 1">
+		<v-col cols="12" sm="6" v-if="pos_profile.posa_allow_return == 1">
 			<v-btn
 				block
 				color="secondary"
@@ -66,7 +79,7 @@
 				{{ __("Sales Return") }}
 			</v-btn>
 		</v-col>
-		<v-col cols="6" v-if="pos_profile.posa_allow_print_draft_invoices">
+		<v-col cols="12" sm="6" v-if="pos_profile.posa_allow_print_draft_invoices">
 			<v-btn
 				block
 				color="primary"
@@ -79,20 +92,7 @@
 				{{ __("Print Draft") }}
 			</v-btn>
 		</v-col>
-		<v-col cols="6">
-			<v-btn
-				block
-				color="info"
-				theme="dark"
-				prepend-icon="mdi-tag"
-				@click="$emit('apply-offers')"
-				class="summary-btn"
-				:loading="applyOffersLoading"
-			>
-				{{ __("Apply Offers") }}
-			</v-btn>
-		</v-col>
-		<v-col cols="6" v-if="showCustomerDisplayButton">
+		<v-col cols="12" sm="6" v-if="showCustomerDisplayButton">
 			<v-btn
 				block
 				color="indigo"
@@ -136,9 +136,9 @@ const props = defineProps({
 	loadDraftsLoading: Boolean,
 	selectOrderLoading: Boolean,
 	cancelLoading: Boolean,
+	invoiceManagementLoading: Boolean,
 	returnsLoading: Boolean,
 	printLoading: Boolean,
-	applyOffersLoading: Boolean,
 	paymentLoading: Boolean,
 	customerDisplayLoading: Boolean,
 });
@@ -148,9 +148,9 @@ defineEmits([
 	"load-drafts",
 	"select-order",
 	"cancel-sale",
+	"open-invoice-management",
 	"open-returns",
 	"print-draft",
-	"apply-offers",
 	"show-payment",
 	"open-customer-display",
 ]);
@@ -175,6 +175,8 @@ const showCustomerDisplayButton = computed(() =>
 	transition: all 0.2s ease !important;
 	position: relative;
 	overflow: hidden;
+	min-height: 46px !important;
+	text-transform: none !important;
 }
 
 .summary-btn :deep(.v-btn__content) {
@@ -208,23 +210,27 @@ const showCustomerDisplayButton = computed(() =>
 /* Responsive optimizations */
 @media (max-width: 768px) {
 	.summary-btn {
-		font-size: 0.875rem !important;
-		padding: 8px 12px !important;
+		font-size: 0.8rem !important;
+		padding: 4px 8px !important;
+		min-height: 42px !important;
 	}
 
 	.pay-btn {
-		font-size: 1rem !important;
+		font-size: 0.95rem !important;
+		min-height: 48px !important;
 	}
 }
 
 @media (max-width: 480px) {
 	.summary-btn {
-		font-size: 0.8rem !important;
-		padding: 6px 8px !important;
+		font-size: 0.74rem !important;
+		padding: 3px 6px !important;
+		min-height: 34px !important;
 	}
 
 	.pay-btn {
-		font-size: 0.95rem !important;
+		font-size: 0.85rem !important;
+		min-height: 40px !important;
 	}
 }
 

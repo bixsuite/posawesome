@@ -4,7 +4,7 @@
 			<v-col md="8" cols="12" class="pb-2 pr-0">
 				<v-card
 					class="main mx-auto mt-3 p-3 pb-16 overflow-y-auto pos-themed-card"
-					style="max-height: 94vh; height: 94vh"
+					style="max-height: calc(100dvh - 32px); height: calc(100dvh - 32px)"
 				>
 					<Customer></Customer>
 					<v-divider></v-divider>
@@ -72,7 +72,7 @@
 			<v-col md="4" cols="12" class="pb-3">
 				<v-card
 					class="invoices mx-auto mt-3 p-3 pos-themed-card"
-					style="max-height: 94vh; height: 94vh"
+					style="max-height: calc(100dvh - 32px); height: calc(100dvh - 32px)"
 				>
 					<PayTotalsSidebar
 						v-model:exchange-rate="exchangeRate"
@@ -137,7 +137,7 @@ import { useRtl } from "../../../composables/core/useRtl";
 import { useCustomersStore } from "../../../stores/customersStore.js";
 import { useUIStore } from "../../../stores/uiStore.js";
 import { useToastStore } from "../../../stores/toastStore.js";
-import { isCachedOpeningValidForCurrentUser } from "../../../utils/openingCache";
+import { getValidCachedOpeningForCurrentUser } from "../../../utils/openingCache";
 
 // Composables
 import { usePosPayData } from "../../../composables/pos/payments/usePosPayData";
@@ -168,6 +168,7 @@ export default {
 		const toastStore = useToastStore();
 		const { rtlStyles, rtlClasses } = useRtl();
 		const { selectedCustomer, refreshToken } = storeToRefs(customersStore);
+		const { paymentRouteTarget } = storeToRefs(uiStore);
 
 		// Core Data & State
 		const dialog = ref(false);
@@ -522,24 +523,41 @@ export default {
 			}
 		};
 
+		const applyOpeningData = async (data) => {
+			if (!data) {
+				return;
+			}
+			pos_profile.value = data.pos_profile;
+			pos_opening_shift.value = data.pos_opening_shift;
+			company.value = data.company?.name || data.pos_profile?.company || "";
+			companyCurrency.value =
+				data.company?.default_currency || data.pos_profile?.currency || null;
+			uiStore.setRegisterData(data);
+			proxy?.eventBus?.emit("payments_register_pos_profile", data);
+			set_payment_methods();
+			await loadPaymentMethodCurrencies();
+			payment_methods_list.value = Array.isArray(pos_profile.value?.payments)
+				? pos_profile.value.payments.map((p) => p.mode_of_payment)
+				: [];
+		};
+
 		const check_opening_entry = async () => {
 			await initPromise;
 			await checkDbHealth();
+			const cachedOpening = getValidCachedOpeningForCurrentUser(
+				getOpeningStorage(),
+				frappe?.session?.user,
+			);
+			if (cachedOpening) {
+				await applyOpeningData(cachedOpening);
+			}
 			try {
 				const r = await frappe.call("posawesome.posawesome.api.shifts.check_opening_shift", {
 					user: frappe.session.user,
 				});
 				if (r.message) {
-					pos_profile.value = r.message.pos_profile;
-					pos_opening_shift.value = r.message.pos_opening_shift;
-					company.value = r.message.company.name;
-					companyCurrency.value = r.message.company.default_currency;
-					uiStore.setRegisterData(r.message);
-					proxy?.eventBus?.emit("payments_register_pos_profile", r.message);
-					set_payment_methods();
-					await loadPaymentMethodCurrencies();
+					await applyOpeningData(r.message);
 					setOpeningStorage(r.message);
-					payment_methods_list.value = pos_profile.value.payments.map((p) => p.mode_of_payment);
 				} else {
 					clearOpeningStorage();
 				}
@@ -551,20 +569,15 @@ export default {
 				}
 			} catch (e) {
 				console.error("Error checking opening entry", e);
-				const cached = getOpeningStorage();
-				if (
-					isOffline() &&
-					isCachedOpeningValidForCurrentUser(cached, frappe?.session?.user)
-				) {
-						pos_profile.value = cached.pos_profile;
-						pos_opening_shift.value = cached.pos_opening_shift;
-						company.value = cached.company.name;
-						companyCurrency.value = cached.company?.default_currency;
-						uiStore.setRegisterData(cached);
-						proxy?.eventBus?.emit("payments_register_pos_profile", cached);
-						set_payment_methods();
-						await loadPaymentMethodCurrencies();
-						payment_methods_list.value = pos_profile.value.payments.map((p) => p.mode_of_payment);
+				const cached =
+					cachedOpening ||
+					getValidCachedOpeningForCurrentUser(
+						getOpeningStorage(),
+						frappe?.session?.user,
+					);
+				if (cached) {
+					await applyOpeningData(cached);
+					return;
 				}
 				if (!isOffline()) {
 					clearOpeningStorage();
@@ -595,6 +608,29 @@ export default {
 		const isSelected = (item) => (isInvoiceSelected(item) ? "selected-row bg-primary bg-lighten-4" : "");
 		function refreshOutstandingInvoices() {
 			return get_outstanding_invoices(pos_profile_search.value || null);
+		}
+
+		function applyPaymentRouteTarget() {
+			const target = paymentRouteTarget.value;
+			if (!target?.invoiceName || !Array.isArray(outstanding_invoices.value)) {
+				return;
+			}
+
+			const matchedInvoice = outstanding_invoices.value.find(
+				(invoice) => invoice?.voucher_no === target.invoiceName,
+			);
+			if (!matchedInvoice) {
+				return;
+			}
+
+			clearSelections();
+			selected_invoices.value = [matchedInvoice];
+			currency_filter.value =
+				matchedInvoice.party_account_currency ||
+				matchedInvoice.currency ||
+				pos_profile.value.currency ||
+				"ALL";
+			uiStore.clearPaymentRouteTarget();
 		}
 
 		const submit = () => processPayment({ printAfter: false });
@@ -679,6 +715,9 @@ export default {
 
 		watch(invoiceTotalCurrency, fetchExchangeRate, { immediate: true });
 		watch(companyCurrency, fetchExchangeRate, { immediate: true });
+		watch([paymentRouteTarget, outstanding_invoices], () => {
+			applyPaymentRouteTarget();
+		});
 
 		return {
 			dialog,
@@ -757,6 +796,7 @@ export default {
 			rtlStyles,
 			rtlClasses,
 			customersStore,
+			paymentRouteTarget,
 		};
 	},
 };

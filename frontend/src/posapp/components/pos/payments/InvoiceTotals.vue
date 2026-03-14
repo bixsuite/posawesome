@@ -1,6 +1,6 @@
 <template>
-	<v-row v-if="invoice_doc" class="pa-1">
-		<v-col cols="6">
+	<v-row v-if="invoice_doc" class="invoice-totals-grid">
+		<v-col cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -13,7 +13,7 @@
 				persistent-placeholder
 			></v-text-field>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -27,7 +27,7 @@
 				persistent-placeholder
 			></v-text-field>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -41,7 +41,7 @@
 				persistent-placeholder
 			></v-text-field>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -57,7 +57,7 @@
 				persistent-placeholder
 			></v-text-field>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -71,7 +71,7 @@
 				persistent-placeholder
 			></v-text-field>
 		</v-col>
-		<v-col cols="6">
+		<v-col cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -85,7 +85,7 @@
 				persistent-placeholder
 			></v-text-field>
 		</v-col>
-		<v-col v-if="invoice_doc && invoice_doc.rounded_total" cols="6">
+		<v-col v-if="invoice_doc && invoice_doc.rounded_total" cols="12" sm="6">
 			<v-text-field
 				density="compact"
 				variant="solo"
@@ -114,3 +114,20 @@ defineProps({
 
 const frappe = window.frappe;
 </script>
+
+<style scoped>
+.invoice-totals-grid {
+	margin: 0;
+	row-gap: var(--pos-space-2);
+}
+
+.invoice-totals-grid :deep(.v-col) {
+	padding-top: 0;
+	padding-bottom: 0;
+}
+
+.invoice-totals-grid :deep(.v-field) {
+	border-radius: var(--pos-radius-sm);
+	background: var(--pos-surface-raised);
+}
+</style>
